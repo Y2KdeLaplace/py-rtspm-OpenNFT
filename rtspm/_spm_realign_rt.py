@@ -129,10 +129,11 @@ def spm_realign_rt(r, flags, ind_vol, ind_first_vol, a0, x1, x2, x3, deg, b):
 
         # Note: Python random number generation process differs from matlab
         # This is why the result is not identical to Matlab SPM
-        rng = np.random.default_rng(0)
+        rng = np.random.RandomState(42) # rng = np.random.default_rng(0)
 
         def add_noise(x, k=0.5):
-            return x + rng.random(x.shape) * k
+            rand_tmp = rng.rand(x.size).reshape(x.shape, order='F')
+            return x + rand_tmp * k
 
         if d[2] < 3:
             lkp = np.array([0, 1, 5])
@@ -145,16 +146,15 @@ def spm_realign_rt(r, flags, ind_vol, ind_first_vol, a0, x1, x2, x3, deg, b):
             x2 = add_noise(x2, 0.5)
             x3 = add_noise(x3, 0.5)
 
-        x1 = x1.ravel()
-        x2 = x2.ravel()
-        x3 = x3.ravel()
+        x1 = x1.ravel(order='F')
+        x2 = x2.ravel(order='F')
+        x3 = x3.ravel(order='F')
 
         # Compute rate of change of chi2 w.r.t changes in parameters(matrix A)
         # ----------------------------------------------------------------------
         v, r[0]["C"] = smooth_vol(r[0], flags["interp"], flags["wrap"], flags["fwhm"])
-        temp_d = np.array([1, 1, 1]) * int(flags['interp'])
-        deg = np.hstack((temp_d.T, np.squeeze(flags['wrap'])))
-        deg = np.array(deg, ndmin=2).T
+        temp_d = np.array([1, 1, 1], ndmin=2) * int(flags['interp'])
+        deg = np.hstack((temp_d.T, flags['wrap']))
 
         g, d_g1, d_g2, d_g3 = spm.bsplins_multi(v, x1, x2, x3, deg)
         a0 = make_a(r[0]["mat"], x1, x2, x3, d_g1, d_g2, d_g3, lkp)
@@ -177,19 +177,19 @@ def spm_realign_rt(r, flags, ind_vol, ind_first_vol, a0, x1, x2, x3, deg, b):
     ss = np.inf
     countdown = -1
     fix_a0 = []
-    iteration = 1
     r0_mat = r[0]["mat"]
     r1_mat = r[1]["mat"]
 
     for iteration in range(1, nr_iter + 1):
 
         y1, y2, y3 = coords(np.zeros((6, 1)), r0_mat, r1_mat, x1, x2, x3)
-        msk = np.nonzero((y1 >= 1) & (y1 <= d[0]) & (y2 >= 1) & (y2 <= d[1]) & (y3 >= 1) & (y3 <= d[2]))
-        msk = msk[0]
+        msk = np.nonzero((y1 >= 1) & (y1 <= d[0]) & (y2 >= 1) & (y2 <= d[1]) & (y3 >= 1) & (y3 <= d[2]))[0]
 
         if msk.size < MASK_THRESHOLD:
-            logger.error('There is not enough overlap in '
-                         'the images to obtain a solution. Offending image: "%s"', r[1].name)
+            logger.error('There is not enough overlap in the images to obtain a solution. '
+                         'Please check that your header information is OK. '
+                         'The Check Reg utility will show you the initial alignment between the images, which must be '
+                         'within about 4cm and about 15 degrees in order for SPM to find the optimal solution.')
 
         f = spm.bsplins(v, y1[msk], y2[msk], y3[msk], deg)
 
@@ -262,7 +262,7 @@ def smooth_vol(r, hld, wrp, fwhm):
     d = np.hstack((temp_d.T, np.array(wrp, ndmin=2)))
 
     coef = spm.bsplinc(r["Vol"], d)
-    coef = coef.reshape(r["dim"])
+    coef = coef.reshape(r["dim"], order='F')
 
     v = np.zeros(coef.shape, order='F')
     v = spm.conv_vol(coef, v, x, y, z, np.array([-i, -j, -k], ndmin=2))
@@ -274,7 +274,7 @@ def make_a(m, x1, x2, x3, dg1, dg2, dg3, lkp):
     # Matrix of rate of change of weighted difference w.r.t.parameter changes
     p0 = np.array([0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0], dtype=float)
     a = np.zeros((x1.size, lkp.size))
-    for i in range(0, lkp.size):
+    for i in range(lkp.size):
         pt = p0.copy()
         pt[lkp[i]] = pt[i] + 1e-6
         y1, y2, y3 = coords(pt, m, m, x1, x2, x3)

@@ -5,6 +5,12 @@ from scipy.special import gammaln
 
 
 def spm_setup(tr, nscan, mean_vol_template, offsets, first_inds, prot_names):
+    # 标准的 SPM（用于事后分析）会根据所有采集到的数据来计算每个时间点的全局阈值（Global Threshold），
+    # 通常默认是平均值的 80% (0.8)。在实时 fMRI (Real-time fMRI) 中，软件无法预知未来的数据。因此，
+    # OpenNFT 只能基于第一帧或预先获取的EPI 模板 (Template/Background Image) 来估算阈值。
+    # 由于无法动态调整每一帧的阈值，固定使用模板的均值存在风险。如果后续扫描中信号强度发生波动（Temporal Variability），
+    # 可能会导致某些脑内体素的信号低于固定的阈值，从而被错误地当成背景掩盖掉。
+    thr = 0.5
     spm = {
         "xY_RT": tr / 1000,
         "nscan": nscan,
@@ -19,7 +25,7 @@ def spm_setup(tr, nscan, mean_vol_template, offsets, first_inds, prot_names):
         "xX_K_HParam": 128,
         "sess_C_C": None,
         "sess_C_name": None,
-        "xM_TH": np.ones((nscan, 1)) * mean_vol_template
+        "xM_TH": np.ones((nscan, 1)) * mean_vol_template*thr
     }
 
     fmri_t = spm["xBF_T"]
