@@ -88,10 +88,6 @@ from .errors import RtSpmError
 
 
 def spm_reslice_rt(r, flags):
-    msk = []
-    count = []
-    integral = []
-    v0 = []
     r0_dim = np.array(r[0]['dim'])
     r0_mat = np.array(r[0]['mat'])
 
@@ -109,9 +105,9 @@ def spm_reslice_rt(r, flags):
         if int(flags['mask']):
             msk = [[] for _ in range(r0_dim[2])]  # [None]*P['dim'][0][2]
 
-        for x3 in range(0, r0_dim[2]):
+        for x3 in range(r0_dim[2]):
             tmp = np.zeros((r0_dim[0], r0_dim[1]))
-            for i in range(0, len(r)):
+            for i in range(len(r)):
                 ri_dim = r[i]['dim'][:3]
                 ri_mat = r[i]['mat']
 
@@ -124,24 +120,22 @@ def spm_reslice_rt(r, flags):
                 tmp += temp_tmp
 
             if int(flags['mask']):
-                msk[x3] = np.argwhere(tmp.reshape(tmp.size, 1) != len(r))[:, 0]
+                msk[x3] = tmp != len(r)
 
             if int(flags['mean']):
                 count[:, :, x3] = tmp
 
     x1, x2 = np.mgrid[1:r0_dim[0] + 1, 1:r0_dim[1] + 1]
 
-    temp_d = np.array([1, 1, 1]) * int(flags['interp'])
-    d = np.hstack((temp_d.T, np.squeeze(flags['wrap'])))
-    d = np.array(d, ndmin=2).T
-    r0_mat = np.array(r[0]['mat'])
+    temp_d = np.array([1, 1, 1], ndmin=2) * int(flags['interp'])
+    d = np.hstack((temp_d.T, flags['wrap']))
 
     for i in range(1, len(r)):  # range(0,P.size)
 
         ri_dim = r[i]['dim'][:3]
         ri_mat = r[i]['mat']
 
-        if (i > 1 and int(flags['which']) == 1) or int(flags['which']) == 2:
+        if (i > 0 and int(flags['which']) == 1) or int(flags['which']) == 2:
             write_vol = 1
         else:
             write_vol = 0
@@ -153,7 +147,7 @@ def spm_reslice_rt(r, flags):
         if read_vol:
 
             v = np.zeros(r0_dim)
-            for x3 in range(0, r0_dim[2]):
+            for x3 in range(r0_dim[2]):
                 try:
                     tmp_division = np.linalg.solve(r0_mat, ri_mat)
                 except np.linalg.LinAlgError as err:
@@ -161,17 +155,13 @@ def spm_reslice_rt(r, flags):
 
                 tmp, y1, y2, y3 = get_mask(np.linalg.inv(tmp_division), x1, x2, x3 + 1, ri_dim, flags['wrap'])
 
-                out_vol = spm.bsplins(r[i]['C'], y1, y2, y3, d)
+                v[:, :, x3] = spm.bsplins(r[i]['C'], y1, y2, y3, d).reshape(r0_dim[:2])
 
                 if int(flags['mean']):
                     integral[:, :, x3] += nan_to_zero(v[:, :, x3])
 
                 if int(flags['mask']):
-                    tmp = out_vol
-                    tmp[msk[x3]] = 0
-                    out_vol = tmp
-
-                v[:, :, x3] = out_vol.reshape(y1.shape)
+                    v[:, :, x3][msk[x3]] = 0
 
             if write_vol:
                 v0 = v
